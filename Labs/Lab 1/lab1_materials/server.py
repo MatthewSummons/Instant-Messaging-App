@@ -26,9 +26,10 @@ class ServerThread(threading.Thread):
 
                 response += response_buffer.decode()
             print("Received guess: ", response, end="")
+            # Game Logic
             try:
                 guess = int(response)
-            except ValueError:
+            except:
                 connectionSocket.close()
             
             msg = None
@@ -39,7 +40,11 @@ class ServerThread(threading.Thread):
             else:
                 msg = "You win!"
             
-            connectionSocket.send((msg + "\n").encode())
+            try:
+                connectionSocket.send((msg + "\n").encode())
+            except:
+                connectionSocket.close()
+            
         connectionSocket.close()
 
 
