@@ -13,31 +13,38 @@ class ServerThread(threading.Thread):
         self.authPath = authPath
     
 
-    def receiveMsg(self, connectionSocket):
+    def receiveMsg(self, connectionSocket) -> str:
         return connectionSocket.recv(1024).decode()
 
     
-    
-    def authenticateUser(self, connectionSocket):        
-        # username, password = connectionSocket.recv(1024).decode()
-
+    def authenticateUser(self, connectionSocket:socket.socket, payload: list[str]):
+        if len(payload) != 2:
+            return connectionSocket.send("102 Authentication Failed\n".encode())
+        
+        sentUsername, sentPassword = payload
         with open(self.authPath, 'r') as authFile:
             for line in authFile:
                 username, password = line.split()
-                if (username == self.username and password == self.password):
-                    connectionSocket.send("Login Successful".encode())
-                    return True
+                if (username == sentUsername and password == sentPassword):
+                    return connectionSocket.send("101 Authentication successful\n".encode())
+        return connectionSocket.send("102 Authentication Failed\n".encode())
 
     def run(self):
         connectionSocket, addr = self.client
-        print(addr)
         # Receive and handle messages from client
-        # while True:
-
-        # TODO: Authenticate user
-
-        
-        self.authenticateUser(connectionSocket)
+        while True:
+            msgArr = self.receiveMsg(connectionSocket).split()
+            
+            if len(msgArr) == 0:
+                print("Connection with client severed. Exiting thread.")
+                break
+            
+            head, payload = msgArr[0], msgArr[1:]
+            match head:
+                case "/login": self.authenticateUser(connectionSocket, payload)
+                # TODO: Umm, don't put in prod
+                case _:
+                    return "How did we get here!"
 
 
 

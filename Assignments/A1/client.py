@@ -29,21 +29,33 @@ class ClientMain:
         
         return serverIP, serverPort
 
-    # TODO: Build this
-    def recvMsg(self, comm_socket):
-        pass
+    def receiveMsg(self, connectionSocket):
+        return connectionSocket.recv(1024).decode()
 
-    def requestAuth(self, comm_socket) -> bool:
+
+    def requestAuth(self, comm_socket:socket.socket) -> tuple[bool, str]:
         username = input("Please input your username: ")
         password = input("Please input your password: ")
+
+        if len(username) == 0 or len(password) == 0:
+            print("Empty username or password. Please try again.")
+            return (False, None)
 
         # Send username and password to server
         request = f"/login {username} {password}\n"
         comm_socket.send(request.encode())
-
-        return False
-
         
+        # Await authentication response
+        response = self.receiveMsg(comm_socket)
+        if response == "101 Authentication successful\n":
+            return (True, username)
+        elif response == "102 Authentication Failed\n":
+            print("\nAuthentication failed. Please try again.\n")
+            return (False, None)
+        else:
+            print(f"Unexpected response from server: {response}")
+            return (False, None)
+
 
     def client_run(self):
         # Recieve IP and port of the server from from command line
@@ -54,9 +66,11 @@ class ClientMain:
         clientSocket.connect( (serverIP, serverPort) )
 
         # Authenticate User
-        authenticated = False
+        authenticated, usr = False, None
         while not authenticated:
-            authenticated = self.requestAuth(clientSocket)
+            print(authenticated, usr)
+            authenticated, usr = self.requestAuth(clientSocket)
+        print(f"Authentication Successful. Welcome {usr}!")
 
 
 if __name__ == '__main__':
