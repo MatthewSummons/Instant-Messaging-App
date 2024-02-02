@@ -68,7 +68,6 @@ class ClientMain:
         # Authenticate User
         authenticated, usr = False, None
         while not authenticated:
-            print(authenticated, usr)
             authenticated, usr = self.requestAuth(clientSocket)
         print(f"Authentication Successful. Welcome {usr}!")
 

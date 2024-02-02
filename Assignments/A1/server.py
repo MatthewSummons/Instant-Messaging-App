@@ -32,20 +32,17 @@ class ServerThread(threading.Thread):
     def run(self):
         connectionSocket, addr = self.client
         # Receive and handle messages from client
-        while True:
-            msgArr = self.receiveMsg(connectionSocket).split()
-            
-            if len(msgArr) == 0:
-                print("Connection with client severed. Exiting thread.")
-                break
-            
+        msgArr = self.receiveMsg(connectionSocket).split()
+        while msgArr:            
             head, payload = msgArr[0], msgArr[1:]
             match head:
                 case "/login": self.authenticateUser(connectionSocket, payload)
                 # TODO: Umm, don't put in prod
                 case _:
                     return "How did we get here!"
-
+            msgArr = self.receiveMsg(connectionSocket).split()
+        print("Closing connection with a client")
+        connectionSocket.close()
 
 
 
@@ -83,6 +80,7 @@ class ServerMain:
 
         while True:
             client = serverSocket.accept()
+            print("Received connection. Spawning a new thread to handle it.")
             thread = ServerThread(client, path)
             thread.start()
 
