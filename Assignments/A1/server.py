@@ -3,46 +3,86 @@ The Server Program for the Instant Messaging Application
 '''
 
 import socket           # For sockets
-import threading        # For threading.Thread
+import threading        # For threading.Thread, threading.Lock
 import sys              # For sys.argv
 
 class ServerThread(threading.Thread):
-    def __init__(self, client, authPath:str):
+    def __init__(self, client, authPath:str, lock:threading.Lock, onlineList:list[str]):
         threading.Thread.__init__(self)
-        self.client = client
-        self.authPath = authPath
-    
+        # Socket_A is used for control messages, Socket_B is used for chat messages
+        self.socket_A: socket.socket = client[0]
+        self.sokcet_B: socket.socket = None
+        # The path of the file containing the username/password pairs
+        self.authPath: str = authPath
+        # The list of online users and a lock to provide thread safety
+        self.lock = lock
+        self.onlineList: list[str]  = onlineList
+
 
     def receiveMsg(self, connectionSocket) -> str:
         return connectionSocket.recv(1024).decode()
 
     
-    def authenticateUser(self, connectionSocket:socket.socket, payload: list[str]):
+    def authenticateUser(self, payload: list[str, str]):
         if len(payload) != 2:
-            return connectionSocket.send("102 Authentication Failed\n".encode())
+            return self.socket_A.send("102 Authentication Failed\n".encode())
         
         sentUsername, sentPassword = payload
         with open(self.authPath, 'r') as authFile:
             for line in authFile:
                 username, password = line.split()
                 if (username == sentUsername and password == sentPassword):
-                    return connectionSocket.send("101 Authentication successful\n".encode())
-        return connectionSocket.send("102 Authentication Failed\n".encode())
+                    self.lock.acquire()
+                    self.onlineList.append(username)
+                    print(self.onlineList)
+                    self.lock.release()
+                    return self.socket_A.send("101 Authentication successful\n".encode())
+        return self.socket_A.send("102 Authentication Failed\n".encode())
+
+
+    def buildConnection(self, payload:list[str]) -> socket.socket:
+        if len(payload) != 1 or not(payload[0].isnumeric()):
+            return self.socket_A.send("202 Build connection failed\n".encode())
+        # Establish a socket to send chat messages through
+        clientIP, _ = self.socket_A.getsockname()
+        self.socket_B = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket_B.connect((clientIP, int(payload[0])))
+        # Report success to the client's main thread
+        self.socket_A.send("201 Build connection successful\n".encode())
+
+
+    def close(self):
+        print("Closing connection with a client")
+        self.socket_A.close()
+        self.socket_B.close()
 
     def run(self):
-        connectionSocket, addr = self.client
         # Receive and handle messages from client
-        msgArr = self.receiveMsg(connectionSocket).split()
+        msgArr = self.receiveMsg(self.socket_A).split()
         while msgArr:            
             head, payload = msgArr[0], msgArr[1:]
             match head:
-                case "/login": self.authenticateUser(connectionSocket, payload)
+                case "/login":
+                    self.authenticateUser(payload)
+                case "/port":
+                    self.buildConnection(payload)
+                case "/list":
+                    pass  # TODO: Implement
+                case "/to":
+                    pass  # TODO: Implement
+                case "/toall":
+                    pass  # TODO: Implement
+                case "/exit":
+                    pass  # TODO: Implement
+
                 # TODO: Umm, don't put in prod
                 case _:
+                    print(head, payload)
                     return "How did we get here!"
-            msgArr = self.receiveMsg(connectionSocket).split()
-        print("Closing connection with a client")
-        connectionSocket.close()
+            msgArr = self.receiveMsg(self.socket_A).split()
+        
+        self.close()
+        
 
 
 
@@ -78,10 +118,11 @@ class ServerMain:
 
         print("The server is ready to receive!")
 
+        onlineList, mutex = [], threading.Lock()
         while True:
             client = serverSocket.accept()
             print("Received connection. Spawning a new thread to handle it.")
-            thread = ServerThread(client, path)
+            thread = ServerThread(client, path, mutex, onlineList)
             thread.start()
 
 
