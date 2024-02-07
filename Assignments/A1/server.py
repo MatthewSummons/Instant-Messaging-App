@@ -7,23 +7,27 @@ import threading        # For threading.Thread, threading.Lock
 import sys              # For sys.argv
 
 class ServerThread(threading.Thread):
-    def __init__(self, client, authPath:str, lock:threading.Lock, onlineList:list[str]):
+    def __init__(self, client, authPath: str, lock: threading.Lock, \
+                 onlineHashset: dict[str, str], sockMutex: threading.Lock):
+        
         threading.Thread.__init__(self)
+        self.name: str = None
         # Socket_A is used for control messages, Socket_B is used for chat messages
         self.socket_A: socket.socket = client[0]
-        self.sokcet_B: socket.socket = None
+        self.socket_B: socket.socket = None
         # The path of the file containing the username/password pairs
         self.authPath: str = authPath
         # The list of online users and a lock to provide thread safety
-        self.lock = lock
-        self.onlineList: list[str]  = onlineList
+        self.onlineHashMutex: threading.Lock = lock
+        self.onlineHashset: dict[str, str] = onlineHashset
+        self.sockMutex: threading.Lock = sockMutex
 
 
-    def receiveMsg(self, connectionSocket) -> str:
+    def receive_msg(self, connectionSocket) -> str:
         return connectionSocket.recv(1024).decode()
 
     
-    def authenticateUser(self, payload: list[str, str]):
+    def authenticate_user(self, payload: list[str, str]):
         if len(payload) != 2:
             return self.socket_A.send("102 Authentication Failed\n".encode())
         
@@ -32,55 +36,106 @@ class ServerThread(threading.Thread):
             for line in authFile:
                 username, password = line.split()
                 if (username == sentUsername and password == sentPassword):
-                    self.lock.acquire()
-                    self.onlineList.append(username)
-                    print(self.onlineList)
-                    self.lock.release()
-                    return self.socket_A.send("101 Authentication successful\n".encode())
+                    self.name = username
+                    status = self.attempt_log_user(self.name)
+                    return self.socket_A.send(status.encode())
         return self.socket_A.send("102 Authentication Failed\n".encode())
 
+    def attempt_log_user(self, username) -> str:
+        authSuccess = False
+        self.onlineHashMutex.acquire()
+        if username in self.onlineHashset: authSuccess = False
+        else:
+            self.onlineHashset[username] = None
+            authSuccess = True
+        self.onlineHashMutex.release()
+        
+        if authSuccess:
+            return "101 Authentication successful\n"
+        return "103 You are already logged in\n"
+      
 
-    def buildConnection(self, payload:list[str]) -> socket.socket:
+    def build_connection(self, payload:list[str]) -> socket.socket:
         if len(payload) != 1 or not(payload[0].isnumeric()):
             return self.socket_A.send("202 Build connection failed\n".encode())
         # Establish a socket to send chat messages through
         clientIP, _ = self.socket_A.getsockname()
         self.socket_B = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket_B.connect((clientIP, int(payload[0])))
+        
+        # Update the reference to the socket in the onlineHashset
+        self.onlineHashMutex.acquire()
+        self.onlineHashset[self.name] = self.socket_B
+        self.onlineHashMutex.release()
+
         # Report success to the client's main thread
         self.socket_A.send("201 Build connection successful\n".encode())
+        print(f"User {self.name} has connected to the chat server on port: {payload[0]}")
 
 
+    def list_online_users(self):
+        self.onlineHashMutex.acquire()
+        response = "301 " + " ".join(list(self.onlineHashset.keys())) + "\n"
+        self.onlineHashMutex.release()
+        
+        self.socket_A.send(response.encode())
+        print("Sent list of online users to: ", self.name)
+    
+
+    def send_message_to(self, payload: list[str, str]):
+        if len(payload) != 2:
+            return self.socket_A.send("304 Message delivery failed\n".encode())
+
+        # Check if target receiver is online
+        sendingSock, response = None, None
+        self.sockMutex.acquire()
+        if payload[0] in self.onlineHashset:
+            sendingSock = self.onlineHashset[payload[0]]        
+        if sendingSock is not None:
+            sendingSock.send(f"/from {self.name} {payload[1]}\n".encode())
+            response = self.receive_msg(sendingSock)
+        self.sockMutex.release()
+
+        if sendingSock is None:
+            self.socket_A.send("304 Message delivery failed\n".encode())
+        
+        
+        print(response)
+
+    
     def close(self):
-        print("Closing connection with a client")
+        print("Logging out user: ", self.name)
+        self.onlineHashMutex.acquire()
+        self.onlineHashset.pop(self.name)
+        self.onlineHashMutex.release()
+
         self.socket_A.close()
         self.socket_B.close()
 
     def run(self):
         # Receive and handle messages from client
-        msgArr = self.receiveMsg(self.socket_A).split()
+        msgArr = self.receive_msg(self.socket_A).split()
         while msgArr:            
             head, payload = msgArr[0], msgArr[1:]
             match head:
                 case "/login":
-                    self.authenticateUser(payload)
+                    self.authenticate_user(payload)
                 case "/port":
-                    self.buildConnection(payload)
+                    self.build_connection(payload)
                 case "/list":
-                    pass  # TODO: Implement
+                    self.list_online_users()
+                # TODO: Still Implementing
                 case "/to":
-                    pass  # TODO: Implement
+                    self.send_message_to(payload)
                 case "/toall":
                     pass  # TODO: Implement
-                case "/exit":
-                    pass  # TODO: Implement
-
-                # TODO: Umm, don't put in prod
+                case "/exit" | "exit" | "quit" | "logout" | "logoff" | "bye":
+                    self.socket_A.send("310 Bye bye\n".encode())
                 case _:
-                    print(head, payload)
-                    return "How did we get here!"
-            msgArr = self.receiveMsg(self.socket_A).split()
-        
+                    print("Unrecognized message: ", head, payload)
+                    self.socket_A.send("401 Unrecognized message\n".encode())
+            msgArr = self.receive_msg(self.socket_A).split()
+
         self.close()
         
 
@@ -118,11 +173,11 @@ class ServerMain:
 
         print("The server is ready to receive!")
 
-        onlineList, mutex = [], threading.Lock()
+        onlineHashset, hashMutex, sockMutex  = {}, threading.Lock(), threading.Lock()
         while True:
             client = serverSocket.accept()
             print("Received connection. Spawning a new thread to handle it.")
-            thread = ServerThread(client, path, mutex, onlineList)
+            thread = ServerThread(client, path, hashMutex, onlineHashset, sockMutex)
             thread.start()
 
 
