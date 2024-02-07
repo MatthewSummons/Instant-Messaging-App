@@ -5,11 +5,9 @@ The Client program for the Instant Messaging Application
 import socket           # For sockets
 import threading        # For threading.Thread
 import sys              # For sys.argv
-import ast              # For ast.literal_eval
 
-# TODO: Build this later
 class ClientThread(threading.Thread):
-    def __new__(cls, name):
+    def __new__(cls, name) -> tuple[threading.Thread, int]:
         self = threading.Thread.__new__(cls)
         threading.Thread.__init__(self)
         self.name = name
@@ -22,7 +20,7 @@ class ClientThread(threading.Thread):
     def receive_msg(self, connectionSocket) -> str:
         return connectionSocket.recv(1024).decode()
     
-    def print_chat_msg(self, sock: socket.socket, payload: str):
+    def print_chat_msg(self, sock: socket.socket, payload: list[str]) -> None:
         if payload is None:
             return sock.send("Error: No Message/n".encode())
         # FIXME: Fix the order of the chatters
@@ -30,7 +28,7 @@ class ClientThread(threading.Thread):
         print(fmtStr, end='')
         sock.send("302 Message receipt successful\n".encode())
 
-    def run(self):
+    def run(self) -> None:
         self.socket.listen(1)
         serverSocket, _ = self.socket.accept()
 
@@ -52,7 +50,7 @@ class ClientMain:
     def __init__(self):
         self.name = None
     
-    def getCmdLineArgs(self) -> (str, int):
+    def getCmdLineArgs(self) -> tuple[str, int]:
         # Check if the correct number of arguments were passed
         if len(sys.argv) != 3:
             print("Usage: python3 client.py <serverIP> <serverPort>")
@@ -73,8 +71,8 @@ class ClientMain:
     def receiveMsg(self, connectionSocket):
         return connectionSocket.recv(1024).decode()
 
-
-    def requestAuth(self, comm_socket:socket.socket) -> tuple[bool, str]:
+    
+    def requestAuth(self, comm_socket:socket.socket) -> tuple[bool, str | None]:
         username = input("Please input your username: ")
         password = input("Please input your password: ")
 

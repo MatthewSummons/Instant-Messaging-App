@@ -7,19 +7,19 @@ import threading        # For threading.Thread, threading.Lock
 import sys              # For sys.argv
 
 class ServerThread(threading.Thread):
-    def __init__(self, client, authPath: str, lock: threading.Lock, \
+    def __init__(self, client, authPath: str, hashMutex: threading.Lock, \
                  onlineHashset: dict[str, str], sockMutex: threading.Lock):
         
         threading.Thread.__init__(self)
-        self.name: str = None
+        self.name: str | None = None
         # Socket_A is used for control messages, Socket_B is used for chat messages
         self.socket_A: socket.socket = client[0]
-        self.socket_B: socket.socket = None
+        self.socket_B: socket.socket | None = None
         # The path of the file containing the username/password pairs
         self.authPath: str = authPath
         # The list of online users and a lock to provide thread safety
-        self.onlineHashMutex: threading.Lock = lock
-        self.onlineHashset: dict[str, str] = onlineHashset
+        self.onlineHashMutex: threading.Lock = hashMutex
+        self.onlineHashset: dict[str, socket.socket | None] = onlineHashset
         self.sockMutex: threading.Lock = sockMutex
 
 
@@ -41,7 +41,7 @@ class ServerThread(threading.Thread):
                     return self.socket_A.send(status.encode())
         return self.socket_A.send("102 Authentication Failed\n".encode())
 
-    def attempt_log_user(self, username) -> str:
+    def attempt_log_user(self, username:str) -> str:
         authSuccess = False
         self.onlineHashMutex.acquire()
         if username in self.onlineHashset: authSuccess = False
@@ -55,7 +55,7 @@ class ServerThread(threading.Thread):
         return "103 You are already logged in\n"
       
 
-    def build_connection(self, payload:list[str]) -> socket.socket:
+    def build_connection(self, payload:list[str]) -> int | None:
         if len(payload) != 1 or not(payload[0].isnumeric()):
             return self.socket_A.send("202 Build connection failed\n".encode())
         # Establish a socket to send chat messages through
@@ -139,7 +139,7 @@ class ServerThread(threading.Thread):
 
 
 class ServerMain:
-    def getCmdLineArgs(self) -> (int, str):
+    def getCmdLineArgs(self) -> tuple[int, str]:
         # Check if the correct number of arguments were passed
         if (len(sys.argv) != 3):
             print("Usage: python3 server.py <serverPort> <path>")
