@@ -79,28 +79,25 @@ class ServerThread(threading.Thread):
         self.onlineHashMutex.release()
         
         self.socket_A.send(response.encode())
-        print("Sent list of online users to: ", self.name)
+        print("Sent list of online users to:", self.name)
     
 
-    def send_message_to(self, payload: list[str, str]):
-        if len(payload) != 2:
-            return self.socket_A.send("304 Message delivery failed\n".encode())
-
+    def send_message(self, payload: list[str, str]):
         # Check if target receiver is online
         sendingSock, response = None, None
         self.sockMutex.acquire()
         if payload[0] in self.onlineHashset:
-            sendingSock = self.onlineHashset[payload[0]]        
+            sendingSock = self.onlineHashset[payload[0]]
         if sendingSock is not None:
-            sendingSock.send(f"/from {self.name} {payload[1]}\n".encode())
+            sendingSock.send(f"/from {self.name} {' '.join(payload[1:])}\n".encode())
             response = self.receive_msg(sendingSock)
         self.sockMutex.release()
 
-        if sendingSock is None:
-            self.socket_A.send("304 Message delivery failed\n".encode())
+        if response == "302 Message receipt successful\n":
+            return self.socket_A.send("303 Message delivery successful\n".encode())
         
-        
-        print(response)
+        # If sendingSock is None or response is not 302
+        self.socket_A.send("304 Message delivery failed\n".encode())
 
     
     def close(self):
@@ -124,9 +121,8 @@ class ServerThread(threading.Thread):
                     self.build_connection(payload)
                 case "/list":
                     self.list_online_users()
-                # TODO: Still Implementing
                 case "/to":
-                    self.send_message_to(payload)
+                    self.send_message(payload)
                 case "/toall":
                     pass  # TODO: Implement
                 case "/exit" | "exit" | "quit" | "logout" | "logoff" | "bye":
