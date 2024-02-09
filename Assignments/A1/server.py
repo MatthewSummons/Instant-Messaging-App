@@ -130,13 +130,17 @@ class ServerThread(threading.Thread):
         self.socket_A.send("303 Message delivery successful\n".encode())
     
     def close(self):
-        print("Logging out user: ", self.name)
-        self.onlineHashMutex.acquire()
-        self.onlineHashset.pop(self.name)
-        self.onlineHashMutex.release()
+        print("Closing a connection:")
+        if self.name:
+            print("  Logging out user:", self.name)
+            self.onlineHashMutex.acquire()
+            self.onlineHashset.pop(self.name)
+            self.onlineHashMutex.release()
+            print("  User logged out")
 
         self.socket_A.close()
         self.socket_B.close()
+        print("  Sockets closed")
 
     def run(self):
         # Receive and handle messages from client
@@ -159,7 +163,12 @@ class ServerThread(threading.Thread):
                 case _:
                     print(f"Unrecognized message from {self.name}: ", head, payload)
                     self.socket_A.send("401 Unrecognized message\n".encode())
-            msgArr = self.receive_msg(self.socket_A).split()
+
+            try:
+                msgArr = self.receive_msg(self.socket_A).split()
+            except KeyboardInterrupt:
+                self.close()
+                sys.exit(0)
 
         self.close()
         
@@ -193,16 +202,26 @@ class ServerMain:
         
         # Create a TCP socket
         serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        serverSocket.bind( ("", serverPort) )
+        try:
+            serverSocket.bind( ("", serverPort) )
+        except OSError as e:
+            print(e)
+        
         serverSocket.listen(5)
 
         print("The server is ready to receive!")
 
         onlineHashset, hashMutex, sockMutex  = {}, threading.Lock(), threading.Lock()
         while True:
-            client = serverSocket.accept()
+            try:
+                client = serverSocket.accept()
+            except KeyboardInterrupt:
+                print("\rClosing Main Thread, No longer accepting connections.")
+                sys.exit(0)
+            
             print("Received connection. Spawning a new thread to handle it.")
             thread = ServerThread(client, path, hashMutex, onlineHashset, sockMutex)
+            thread.daemon = True            # Ensures that all threads are killed when the main thread is killed
             thread.start()
 
 

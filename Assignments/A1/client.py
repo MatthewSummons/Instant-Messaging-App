@@ -39,8 +39,12 @@ class ClientThread(threading.Thread):
         self.socket.listen(1)
         serverSocket, _ = self.socket.accept()
 
-        msg = self.receive_msg(serverSocket).split()
+        msg = None
         while msg != "310 Bye bye\n":
+            msg = self.receive_msg(serverSocket)
+            if not(msg): 
+                return self.end()
+            msg = msg.split()   
             head, payload = msg[0], msg[1:]
             if head == "/from":
                 self.print_msg(serverSocket, payload)
@@ -49,7 +53,6 @@ class ClientThread(threading.Thread):
             else:
                 print(repr(head))
                 print(msg)
-            msg = self.receive_msg(serverSocket).split()
         
     
     def end(self):
@@ -77,13 +80,24 @@ class ClientMain:
         
         return serverIP, serverPort
 
-    def receiveMsg(self, connectionSocket:socket.socket) -> str:
-        return connectionSocket.recv(1024).decode()
+    def receiveMsg(self, connectionSocket:socket.socket) -> str | None:
+        try:
+            return connectionSocket.recv(1024).decode()
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            sys.exit(1)
+        except BrokenPipeError | ConnectionResetError:
+            print("Connection to server lost. Exiting...")
+            sys.exit(1)
 
     
     def requestAuth(self, comm_socket:socket.socket) -> tuple[bool, str | None]:
-        username = input("Please input your username: ")
-        password = input("Please input your password: ")
+        try:
+            username = input("Please input your username: ")
+            password = input("Please input your password: ")
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            return sys.exit(1)
 
         if len(username) == 0 or len(password) == 0:
             print("Empty username or password. Please try again.")
@@ -91,7 +105,12 @@ class ClientMain:
 
         # Send username and password to server
         request = f"/login {username} {password}\n"
-        comm_socket.send(request.encode())
+        try:
+            comm_socket.send(request.encode())
+        except BrokenPipeError:
+            print("Connection to server lost. Exiting...")
+            sys.exit(1)
+        
         
         # Await authentication response
         response = self.receiveMsg(comm_socket)
@@ -101,15 +120,19 @@ class ClientMain:
             print("\nAuthentication failed. Please try again.\n")
             return (False, None)
         else:
-            print("Unexpected response from server:")
-            print(response)
+            print("Unexpected response from server:", response)
             return (False, None)
 
 
     def establishConnection(self, comm_socket:socket.socket, port:str) -> bool | None:
         request = f"/port {port}\n"
-        comm_socket.send(request.encode())
+        try:
+            comm_socket.send(request.encode())
+        except BrokenPipeError:
+            print("Connection to server lost. Exiting...")
+            return sys.exit(1)
         
+
         response = self.receiveMsg(comm_socket)
         if response == "202 Build connection failed\n":
             return print(response)
@@ -124,7 +147,14 @@ class ClientMain:
         
         # Create a TCP socket to connect to the server
         clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        clientSocket.connect( (serverIP, serverPort_A) )
+        try:  clientSocket.connect( (serverIP, serverPort_A) )
+        except ConnectionRefusedError:
+            print("Server may be down, connection to server failed. Exiting...")
+            sys.exit(1)
+        except Exception as e:
+            print("An unexpected error occurred:", e)
+            sys.exit(1)
+
 
         # Authenticate User
         authenticated = False
@@ -140,18 +170,24 @@ class ClientMain:
 
         if ret is None:
             chatThread.end()
-            return print("Connection failed. Exiting...")
+            return print("Failed to establish 2-way channel with server. Exiting...")
         
         response = True
         while response != "310 Bye bye\n":
-            request = input(f"{self.name} > ") + "\n"
-            clientSocket.send(request.encode())
+            try:
+                request = input(f"{self.name} > ") + "\n"
+            except KeyboardInterrupt:
+                request = "/exit\n"
+            try:
+                clientSocket.send(request.encode())
+            except BrokenPipeError:
+                print("Connection to server lost. Exiting...")
+                chatThread.end()
+                sys.exit(1)
             response = self.receiveMsg(clientSocket)
             print()
             print(response)
         
-        # TODO: Clean up client and its threads
-        # chatThread.terminate()
         clientSocket.close()
 
 
