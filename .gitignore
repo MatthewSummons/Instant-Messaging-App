@@ -2,7 +2,7 @@
 .DS_Store
 .AppleDouble
 .LSOverride
-.icloud
+.*.icloud
 
 # Thumbnails
 ._*
@@ -21,3 +21,6 @@ Temporary Items
 
 # Copyrighted Textbook
 Computer Networking_ A Top-Down Approach, Global Edition, 8th Edition.pdf
+
+# Passwords
+Assignments/A1/.passwords/usernameAndPasswords.txt
