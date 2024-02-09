@@ -12,12 +12,12 @@ class ServerThread(threading.Thread):
         client,
         authPath: str,
         hashMutex: threading.Lock,
-        onlineHashset: dict[str, str],
+        onlineHashset: dict[str, socket.socket | None],
         sockMutex: threading.Lock
         ) -> None:
         
         threading.Thread.__init__(self)
-        self.name: str | None = None
+        self.name: str = "" 
         # Socket_A is used for control messages, Socket_B is used for chat messages
         self.socket_A: socket.socket = client[0]
         self.socket_B: socket.socket | None = None
@@ -33,7 +33,7 @@ class ServerThread(threading.Thread):
         return connectionSocket.recv(1024).decode()
 
     
-    def authenticate_user(self, payload: list[str, str]):
+    def authenticate_user(self, payload: list[str]):
         if len(payload) != 2:
             return self.socket_A.send("102 Authentication Failed\n".encode())
         
@@ -75,8 +75,8 @@ class ServerThread(threading.Thread):
         self.onlineHashMutex.release()
 
         # Report success to the client's main thread
-        self.socket_A.send("201 Build connection successful\n".encode())
         print(f"User {self.name} has connected to the chat server on port: {payload[0]}")
+        return self.socket_A.send("201 Build connection successful\n".encode())
 
 
     def list_online_users(self):
@@ -88,7 +88,9 @@ class ServerThread(threading.Thread):
         print("Sent list of online users to:", self.name)
     
 
-    def send_message(self, payload: list[str, str]):
+    def send_message(self, payload: list[str]):
+        if payload[0] == self.name:
+            return self.socket_A.send("304 Message delivery failed\n".encode())
         # Check if target receiver is online
         sendingSock, response = None, None
         self.sockMutex.acquire()
@@ -139,10 +141,11 @@ class ServerThread(threading.Thread):
             print("  User logged out")
 
         self.socket_A.close()
-        self.socket_B.close()
+        if self.socket_B:
+            self.socket_B.close()
         print("  Sockets closed")
 
-    def run(self):
+    def run(self) -> None:
         # Receive and handle messages from client
         msgArr = self.receive_msg(self.socket_A).split()
         while msgArr:            
@@ -196,7 +199,7 @@ class ServerMain:
         path = sys.argv[2]
         return serverPort, path
     
-    def server_run(self):
+    def server_run(self) -> None:
         # Recieve port and path to the username/password file from command line
         serverPort, path = self.getCmdLineArgs()
         
@@ -205,18 +208,18 @@ class ServerMain:
         try:
             serverSocket.bind( ("", serverPort) )
         except OSError as e:
-            print(e)
+            return print(e)
         
         serverSocket.listen(5)
 
         print("The server is ready to receive!")
 
-        onlineHashset, hashMutex, sockMutex  = {}, threading.Lock(), threading.Lock()
+        onlineHashset: dict[str, socket.socket | None] = {}
+        hashMutex, sockMutex  = threading.Lock(), threading.Lock()
         while True:
-            try:
-                client = serverSocket.accept()
+            try: client = serverSocket.accept()
             except KeyboardInterrupt:
-                print("\rClosing Main Thread, No longer accepting connections.")
+                print("\rServer shutting down. Goodbye!")
                 sys.exit(0)
             
             print("Received connection. Spawning a new thread to handle it.")

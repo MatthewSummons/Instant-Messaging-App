@@ -14,7 +14,7 @@ class ClientThread(threading.Thread):
         # Find an available port and bind the socket to it (for chat messaging)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(('', 0))
-        self.socket: socket.socket = sock
+        self.socket = sock
         return self, sock.getsockname()[1]
 
     def receive_msg(self, connectionSocket) -> str:
@@ -39,13 +39,14 @@ class ClientThread(threading.Thread):
         self.socket.listen(1)
         serverSocket, _ = self.socket.accept()
 
-        msg = None
+        msg: str | None = None
         while msg != "310 Bye bye\n":
+            # Receive and verify the message to be non null
             msg = self.receive_msg(serverSocket)
-            if not(msg): 
-                return self.end()
-            msg = msg.split()   
-            head, payload = msg[0], msg[1:]
+            if not(msg):  return self.end()
+            msgList: list[str] = msg.split()   
+            
+            head, payload = msgList[0], msgList[1:]
             if head == "/from":
                 self.print_msg(serverSocket, payload)
             elif head == "/broadcast":
@@ -60,7 +61,7 @@ class ClientThread(threading.Thread):
 
 class ClientMain:
     def __init__(self):
-        self.name = None
+        self.name: str | None = None
     
     def getCmdLineArgs(self) -> tuple[str, int]:
         # Check if the correct number of arguments were passed
@@ -141,7 +142,7 @@ class ClientMain:
         return True
 
 
-    def client_run(self):
+    def client_run(self) -> None:
         # Recieve IP and port of the server from from command line
         serverIP, serverPort_A = self.getCmdLineArgs()
         
@@ -172,21 +173,18 @@ class ClientMain:
             chatThread.end()
             return print("Failed to establish 2-way channel with server. Exiting...")
         
-        response = True
+        response = ""
         while response != "310 Bye bye\n":
-            try:
-                request = input(f"{self.name} > ") + "\n"
+            try: request = input(f"{self.name} > ") + "\n"
             except KeyboardInterrupt:
                 request = "/exit\n"
-            try:
-                clientSocket.send(request.encode())
+            try: clientSocket.send(request.encode())
             except BrokenPipeError:
                 print("Connection to server lost. Exiting...")
                 chatThread.end()
                 sys.exit(1)
             response = self.receiveMsg(clientSocket)
-            print()
-            print(response)
+            print(f"\t{'[' + response[:-1] + ']':^100}")
         
         clientSocket.close()
 
