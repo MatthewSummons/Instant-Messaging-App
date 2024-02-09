@@ -20,10 +20,17 @@ class ClientThread(threading.Thread):
     def receive_msg(self, connectionSocket) -> str:
         return connectionSocket.recv(1024).decode()
     
-    def print_chat_msg(self, sock: socket.socket, payload: list[str]) -> None:
+    def print_msg(self, sock: socket.socket, payload: list[str]) -> None:
         if payload is None:
             return sock.send("Error: No Message/n".encode())
-        # FIXME: Fix the order of the chatters
+        fmtStr = '\r' + f"{payload[0]} > {' '.join(payload[1:])}" + '\n' + f"{self.name} > "
+        print(fmtStr, end='')
+        sock.send("302 Message receipt successful\n".encode())
+
+    
+    def print_broadcast(self, sock: socket.socket, payload: list[str]) -> None:
+        if payload is None:
+            return sock.send("Error: No Message/n".encode())
         fmtStr = '\r' + f"{payload[0]} > {' '.join(payload[1:])}" + '\n' + f"{self.name} > "
         print(fmtStr, end='')
         sock.send("302 Message receipt successful\n".encode())
@@ -36,7 +43,9 @@ class ClientThread(threading.Thread):
         while msg != "310 Bye bye\n":
             head, payload = msg[0], msg[1:]
             if head == "/from":
-                self.print_chat_msg(serverSocket, payload)
+                self.print_msg(serverSocket, payload)
+            elif head == "/broadcast":
+                self.print_broadcast(serverSocket, payload)
             else:
                 print(repr(head))
                 print(msg)
@@ -68,7 +77,7 @@ class ClientMain:
         
         return serverIP, serverPort
 
-    def receiveMsg(self, connectionSocket):
+    def receiveMsg(self, connectionSocket:socket.socket) -> str:
         return connectionSocket.recv(1024).decode()
 
     

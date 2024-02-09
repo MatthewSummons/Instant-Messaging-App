@@ -7,8 +7,14 @@ import threading        # For threading.Thread, threading.Lock
 import sys              # For sys.argv
 
 class ServerThread(threading.Thread):
-    def __init__(self, client, authPath: str, hashMutex: threading.Lock, \
-                 onlineHashset: dict[str, str], sockMutex: threading.Lock):
+    def __init__(
+        self,
+        client,
+        authPath: str,
+        hashMutex: threading.Lock,
+        onlineHashset: dict[str, str],
+        sockMutex: threading.Lock
+        ) -> None:
         
         threading.Thread.__init__(self)
         self.name: str | None = None
@@ -23,7 +29,7 @@ class ServerThread(threading.Thread):
         self.sockMutex: threading.Lock = sockMutex
 
 
-    def receive_msg(self, connectionSocket) -> str:
+    def receive_msg(self, connectionSocket:socket.socket) -> str:
         return connectionSocket.recv(1024).decode()
 
     
@@ -89,8 +95,10 @@ class ServerThread(threading.Thread):
         if payload[0] in self.onlineHashset:
             sendingSock = self.onlineHashset[payload[0]]
         if sendingSock is not None:
-            sendingSock.send(f"/from {self.name} {' '.join(payload[1:])}\n".encode())
-            response = self.receive_msg(sendingSock)
+            try:
+                sendingSock.send(f"/from {self.name} {' '.join(payload[1:])}\n".encode())
+                response = self.receive_msg(sendingSock)
+            except Exception as e: print(e)
         self.sockMutex.release()
 
         if response == "302 Message receipt successful\n":
@@ -99,6 +107,27 @@ class ServerThread(threading.Thread):
         # If sendingSock is None or response is not 302
         self.socket_A.send("304 Message delivery failed\n".encode())
 
+
+    def broadcast_message(self, payload: list[str]):
+        responseBin: list[str] = []
+        self.onlineHashMutex.acquire()
+        numOnlineUsers = len(self.onlineHashset)
+        for username, clientSock_B in self.onlineHashset.items():
+            if username != self.name and clientSock_B is not None:
+                try:
+                    clientSock_B.send(f"/broadcast {self.name} {' '.join(payload)}\n".encode())
+                    responseBin.append(self.receive_msg(clientSock_B))
+                except Exception as e: print(e)
+        self.onlineHashMutex.release()
+
+        if len(responseBin) != numOnlineUsers - 1:
+            return self.socket_A.send("304 Message delivery failed\n".encode())
+        
+        for response in responseBin:
+            if response != "302 Message receipt successful\n":
+                return self.socket_A.send("304 Message delivery failed\n".encode())
+
+        self.socket_A.send("303 Message delivery successful\n".encode())
     
     def close(self):
         print("Logging out user: ", self.name)
@@ -124,11 +153,11 @@ class ServerThread(threading.Thread):
                 case "/to":
                     self.send_message(payload)
                 case "/toall":
-                    pass  # TODO: Implement
+                    self.broadcast_message(payload)
                 case "/exit" | "exit" | "quit" | "logout" | "logoff" | "bye":
                     self.socket_A.send("310 Bye bye\n".encode())
                 case _:
-                    print("Unrecognized message: ", head, payload)
+                    print(f"Unrecognized message from {self.name}: ", head, payload)
                     self.socket_A.send("401 Unrecognized message\n".encode())
             msgArr = self.receive_msg(self.socket_A).split()
 
