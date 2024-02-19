@@ -148,8 +148,16 @@ class ServerThread(threading.Thread):
 
     def run(self) -> None:
         # Receive and handle messages from client
-        msgArr = self.receive_msg(self.socket_A).split()
+        
+        try:
+            msgArr = self.receive_msg(self.socket_A).split()
+        except Exception as e:
+            print(e)
+            return self.close()
+        
         while msgArr:            
+            if self.name: print(f"Received message from {self.name}: ", msgArr)
+            else: print("A first message from a client was received: ", msgArr)
             head, payload = msgArr[0], msgArr[1:]
             match head:
                 case "/login":

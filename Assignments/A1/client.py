@@ -56,10 +56,9 @@ class ClientThread(threading.Thread):
 
         msg: str | None = None
         while msg != "310 Bye bye\n":
-            # Receive and verify the message to be non null
+            # Receive and verify the message to be non-null
             msg = self.receive_msg(serverSocket)
             if not(msg):  return self.end()
-            if msg == '': print(f"{self.name} >")
             msgList: list[str] = msg.split()   
             
             head, payload = msgList[0], msgList[1:]
@@ -198,6 +197,10 @@ class ClientMain:
             try: request = input(f"{self.name} > ") + "\n"
             except KeyboardInterrupt:
                 request = "/exit\n"
+            
+            # If blank line, don't send anything, ask client to input again
+            if request == "\n": continue
+            
             try: clientSocket.send(request.encode())
             except BrokenPipeError:
                 print("Connection to server lost. Exiting...")
