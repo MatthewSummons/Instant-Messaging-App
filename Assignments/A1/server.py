@@ -58,6 +58,7 @@ class ServerThread(threading.Thread):
         
         if authSuccess:
             return "101 Authentication successful\n"
+        print("User", username, "is already logged in and attempted to log in again")
         return "103 You are already logged in\n"
       
 
@@ -176,9 +177,6 @@ class ServerThread(threading.Thread):
         self.close()
         
 
-
-
-
 class ServerMain:
     def getCmdLineArgs(self) -> tuple[int, str]:
         # Check if the correct number of arguments were passed
@@ -224,7 +222,7 @@ class ServerMain:
             
             print("Received connection. Spawning a new thread to handle it.")
             thread = ServerThread(client, path, hashMutex, onlineHashset, sockMutex)
-            thread.daemon = True            # Ensures that all threads are killed when the main thread is killed
+            thread.daemon = True    # Ensures that all threads are killed when the main thread is killed
             thread.start()
 
 

@@ -17,8 +17,23 @@ class ClientThread(threading.Thread):
         self.socket = sock
         return self, sock.getsockname()[1]
 
-    def receive_msg(self, connectionSocket) -> str:
-        return connectionSocket.recv(1024).decode()
+    def receive_msg(self, connectionSocket: socket.socket) -> str | None:
+        response = ''
+        while not response.endswith('\n'):
+            try:
+                response_buffer = connectionSocket.recv(1024)
+            except KeyboardInterrupt:
+                print("\nExiting...")
+                sys.exit(1)
+            except Exception as e:
+                print("Connection to server lost. Exiting...")
+                print(e)
+                sys.exit(1)
+            if len(response_buffer) == 0:
+                connectionSocket.close()
+                return None
+            response += response_buffer.decode()
+        return response
     
     def print_msg(self, sock: socket.socket, payload: list[str]) -> None:
         if payload is None:
@@ -44,6 +59,7 @@ class ClientThread(threading.Thread):
             # Receive and verify the message to be non null
             msg = self.receive_msg(serverSocket)
             if not(msg):  return self.end()
+            if msg == '': print(f"{self.name} >")
             msgList: list[str] = msg.split()   
             
             head, payload = msgList[0], msgList[1:]
@@ -58,6 +74,7 @@ class ClientThread(threading.Thread):
     
     def end(self):
         self.socket.close()
+
 
 class ClientMain:
     def __init__(self):
@@ -119,6 +136,9 @@ class ClientMain:
             return (True, username)
         elif response == "102 Authentication Failed\n":
             print("\nAuthentication failed. Please try again.\n")
+            return (False, None)
+        elif response == "103 You are already logged in\n":
+            print("\nAuthentication Failed. You are already logged in.\n")
             return (False, None)
         else:
             print("Unexpected response from server:", response)
