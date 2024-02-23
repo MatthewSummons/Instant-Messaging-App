@@ -199,7 +199,9 @@ class ClientMain:
                 request = "/exit\n"
             
             # If blank line, don't send anything, ask client to input again
-            if request == "\n": continue
+            if request == "\n":
+                print("\nPlease input a message!\n")
+                continue
             
             try: clientSocket.send(request.encode())
             except BrokenPipeError:
