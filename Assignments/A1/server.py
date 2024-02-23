@@ -27,12 +27,14 @@ class ServerThread(threading.Thread):
         self.onlineHashMutex: threading.Lock = hashMutex
         self.onlineHashset: dict[str, socket.socket | None] = onlineHashset
         self.sockMutex: threading.Lock = sockMutex
+        # Flag to force close the connection
+        self.forceQuit: bool = False
+        self.socket_A.settimeout(2)
 
 
     def receive_msg(self, connectionSocket:socket.socket) -> str:
         return connectionSocket.recv(1024).decode()
 
-    
     def authenticate_user(self, payload: list[str]):
         if len(payload) != 2:
             return self.socket_A.send("102 Authentication Failed\n".encode())
@@ -132,6 +134,16 @@ class ServerThread(threading.Thread):
 
         self.socket_A.send("303 Message delivery successful\n".encode())
     
+    def forceClose(self):
+        try:
+            self.sockMutex.acquire()
+            self.socket_B.send("/forceQuit\n".encode())
+            self.sockMutex.release()
+        except Exception as e:
+            print("Failed to send a disconnect message to the client")
+            print(e)
+        self.close()
+
     def close(self):
         print("Closing a connection:")
         if self.name:
@@ -140,7 +152,7 @@ class ServerThread(threading.Thread):
             self.onlineHashset.pop(self.name)
             self.onlineHashMutex.release()
             print("  User logged out")
-
+        
         self.socket_A.close()
         if self.socket_B:
             self.socket_B.close()
@@ -148,14 +160,21 @@ class ServerThread(threading.Thread):
 
     def run(self) -> None:
         # Receive and handle messages from client
-        
-        try:
-            msgArr = self.receive_msg(self.socket_A).split()
-        except Exception as e:
-            print(e)
-            return self.close()
-        
+        msgArr = ['', '']
         while msgArr:            
+            if self.forceQuit: return self.forceClose()
+            
+            try:
+                msgArr = self.receive_msg(self.socket_A).split()
+            # Check for forceQuit every 2 seconds
+            except TimeoutError: continue
+            except Exception as e: return self.close()
+            
+            # Handle user quitting during login and authetication
+            if not(msgArr):
+                return self.close()
+
+
             if self.name: print(f"Received message from {self.name}: ", msgArr)
             else: print("A first message from a client was received: ", msgArr)
             head, payload = msgArr[0], msgArr[1:]
@@ -176,15 +195,10 @@ class ServerThread(threading.Thread):
                     print(f"Unrecognized message from {self.name}: ", head, payload)
                     self.socket_A.send("401 Unrecognized message\n".encode())
 
-            try:
-                msgArr = self.receive_msg(self.socket_A).split()
-            except KeyboardInterrupt:
-                self.close()
-                sys.exit(0)
-
         self.close()
         
 
+# Main thread handles receiving connections and spawning new threads (besides getting cmdline args)
 class ServerMain:
     def getCmdLineArgs(self) -> tuple[int, str]:
         # Check if the correct number of arguments were passed
@@ -220,17 +234,25 @@ class ServerMain:
 
         print("The server is ready to receive!")
 
+        threadSet: set[ServerThread] = set()
         onlineHashset: dict[str, socket.socket | None] = {}
         hashMutex, sockMutex  = threading.Lock(), threading.Lock()
         while True:
             try: client = serverSocket.accept()
             except KeyboardInterrupt:
-                print("\rServer shutting down. Goodbye!")
+                print("\rServer is now shutting down.")
+                try:
+                    for thrd in threadSet:
+                        thrd.forceQuit = True
+                except KeyboardInterrupt:
+                    print("Closing all connections, please wait...")
+
+                    
                 sys.exit(0)
             
             print("Received connection. Spawning a new thread to handle it.")
             thread = ServerThread(client, path, hashMutex, onlineHashset, sockMutex)
-            thread.daemon = True    # Ensures that all threads are killed when the main thread is killed
+            threadSet.add(thread)
             thread.start()
 
 

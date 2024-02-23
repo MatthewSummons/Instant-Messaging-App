@@ -5,6 +5,7 @@ The Client program for the Instant Messaging Application
 import socket           # For sockets
 import threading        # For threading.Thread
 import sys              # For sys.argv
+import os               # For forced exit
 
 class ClientThread(threading.Thread):
     def __new__(cls, name) -> tuple[threading.Thread, int]:
@@ -66,11 +67,14 @@ class ClientThread(threading.Thread):
                 self.print_msg(serverSocket, payload)
             elif head == "/broadcast":
                 self.print_broadcast(serverSocket, payload)
+            elif head == "/forceQuit":
+                print("\nServer has been shut down. Exiting...")
+                self.end()
+                os._exit(1) # No other clean way to exit
             else:
                 print(repr(head))
                 print(msg)
         
-    
     def end(self):
         self.socket.close()
 
@@ -103,7 +107,7 @@ class ClientMain:
         except KeyboardInterrupt:
             print("\nExiting...")
             sys.exit(1)
-        except BrokenPipeError | ConnectionResetError:
+        except ConnectionResetError:
             print("Connection to server lost. Exiting...")
             sys.exit(1)
 
